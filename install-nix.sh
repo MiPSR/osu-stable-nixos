@@ -1,65 +1,48 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # osu! Installer (NixOS Edition)
-# Forked from: Kitty-Hivens/linux-osu-stable-installer
-# NixOS port inspired by: afanetd / GalaxyVinci05 forks
-#
-# Modified for: NixOS Environment
-#  - No GUI (CLI only)
-#  - Dependencies provided by Nix (no apt/pacman logic)
-#  - CLI arguments supported (--silent, --dir, ...)
-#  - Desktop entry / icon / MIME type are provided by the Nix package
 # ==============================================================================
 
 set -e
 
-# --- 1. Default Settings ---
-INSTALL_DIR="$HOME/.wine-osu"
+# --- Settings file (single file, no folder) ---
+SETTINGS_FILE="$HOME/.config/osu-stable.conf"
+
+# Defaults
 RENDERER="DXVK"
 DRIVER="X11"
 FONTS="WenQuanYi (Micro Hei)"
 INSTALL_RPC="TRUE"
 
-# --- 2. CLI Argument Parsing ---
-show_help() {
-    echo "Usage: $0 [OPTIONS]"
-    echo "  -s, --silent        Run without GUI (accepted for compatibility)"
-    echo "  -d, --dir PATH      Install prefix (Default: ~/.wine-osu)"
-    echo "  --renderer TYPE     OpenGL or DXVK (Default: DXVK)"
-    echo "  --driver TYPE       X11 or Wayland (Default: X11)"
-    echo "  --font NAME         Select font (WenQuanYi, Noto Sans, Koruri, Skip)"
-    echo "  --no-rpc            Skip Discord Rich Presence installation"
-    echo "  -h, --help          Show this help"
+# Load existing settings if present
+if [ -f "$SETTINGS_FILE" ]; then
+    # shellcheck source=/dev/null
+    source "$SETTINGS_FILE"
+fi
+
+# --- Fixed install location ---
+INSTALL_DIR="$HOME/osu-stable"
+
+# --- Uninstall ---
+if [ "${1:-}" = "--uninstall" ]; then
+    echo "Uninstalling osu!stable..."
+    rm -rf "$INSTALL_DIR"
+    rm -f "$HOME/.local/share/applications/osu-stable.desktop"
+    echo "Done."
     exit 0
-}
+fi
 
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        -s|--silent) ;;
-        -d|--dir) INSTALL_DIR="$2"; shift ;;
-        --renderer) RENDERER="$2"; shift ;;
-        --driver) DRIVER="$2"; shift ;;
-        --font) FONTS="$2"; shift ;;
-        --no-rpc) INSTALL_RPC="FALSE" ;;
-        -h|--help) show_help ;;
-        *) echo "Unknown parameter: $1"; exit 1 ;;
-    esac
-    shift
-done
-
-# --- 3. Dependency Check (Nix Way) ---
+# --- Dependency check ---
 REQUIRED_TOOLS="curl unzip winetricks wine"
 
 echo "Checking dependencies..."
 for tool in $REQUIRED_TOOLS; do
     if ! command -v "$tool" &> /dev/null; then
         echo "ERROR: '$tool' is missing."
-        echo "Please ensure your package or shell environment provides these dependencies."
         exit 1
     fi
 done
 
-# Find Wine (priority: wine-staging, then wine)
 if command -v wine-staging &> /dev/null; then
     WINE_BIN="wine-staging"
 elif command -v wine &> /dev/null; then
@@ -70,9 +53,11 @@ else
 fi
 
 WINE_FULL_PATH=$(command -v "$WINE_BIN")
+NOTIFY_DIR="$(dirname "$(command -v notify-send 2>/dev/null)")"
+[ -z "$NOTIFY_DIR" ] || [ "$NOTIFY_DIR" = "." ] && NOTIFY_DIR=""
+
 echo "Using Wine: $WINE_FULL_PATH"
 
-# Clean up GUI variables (e.g. "OpenGL (Stable)" -> "OpenGL")
 [[ "$RENDERER" == *"DXVK"* ]] && RENDERER="DXVK" || RENDERER="OpenGL"
 [[ "$DRIVER" == *"Wayland"* ]] && DRIVER="Wayland" || DRIVER="X11"
 
@@ -85,21 +70,21 @@ echo "Fonts:    $FONTS"
 echo "RPC:      $INSTALL_RPC"
 echo "=============="
 
-# --- 4. Task Helper (CLI) ---
-run_task() {
-    local title="$1"
-    local text="$2"
-    shift 2
-    echo ">> $title: $text"
-    "$@"
-}
+# Save settings
+mkdir -p "$(dirname "$SETTINGS_FILE")"
+cat > "$SETTINGS_FILE" << EOF
+RENDERER="$RENDERER"
+DRIVER="$DRIVER"
+FONTS="$FONTS"
+INSTALL_RPC="$INSTALL_RPC"
+EOF
 
 export WINE="$WINE_BIN"
 export WINEPREFIX="$INSTALL_DIR"
 
-# --- 5. Prefix and .NET setup ---
 mkdir -p "$INSTALL_DIR"
 
+# --- .NET ---
 install_dotnet() {
     if [ ! -d "$WINEPREFIX/drive_c/windows/Microsoft.NET/Framework/v4.0.30319" ]; then
         set +e
@@ -109,10 +94,10 @@ install_dotnet() {
         echo ".NET already installed."
     fi
 }
+echo ">> Installing .NET: Setting up .NET 4.8 Framework..."
+install_dotnet
 
-run_task "Installing .NET" "Setting up .NET 4.8 Framework..." install_dotnet
-
-# --- 6. Graphics Configuration ---
+# --- Graphics ---
 configure_graphics() {
     if [ "$RENDERER" == "DXVK" ]; then
         echo "Installing DXVK..."
@@ -133,9 +118,10 @@ configure_graphics() {
         "$WINE_BIN" reg delete "HKCU\Software\Wine\Drivers" /v "Graphics" /f 2>/dev/null || true
     fi
 }
-run_task "Graphics" "Applying graphics settings ($RENDERER / $DRIVER)..." configure_graphics
+echo ">> Graphics: Applying graphics settings ($RENDERER / $DRIVER)..."
+configure_graphics
 
-# --- 7. Fonts ---
+# --- Fonts ---
 configure_fonts() {
     if [[ "$FONTS" == "Skip" ]]; then return 0; fi
 
@@ -161,8 +147,8 @@ configure_fonts() {
         ;;
     esac
 
-    if [ -n "$REG_NAME" ]; then
-        cat > "$WINEPREFIX/font_fix.reg" << EOF
+    if [ -n "${REG_NAME:-}" ]; then
+        cat > "$WINEPREFIX/font_fix.reg" << EOFREG
 REGEDIT4
 [HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes]
 "Arial"="$REG_NAME"
@@ -179,14 +165,15 @@ REGEDIT4
 [HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Nls\CodePage]
 "932"="cp932.nls"
 "00000411"="cp932.nls"
-EOF
+EOFREG
         WAYLAND_DISPLAY="" "$WINE_BIN" regedit "$WINEPREFIX/font_fix.reg" 2>/dev/null
         rm "$WINEPREFIX/font_fix.reg"
     fi
 }
-run_task "Fonts" "Installing fonts..." configure_fonts
+echo ">> Fonts: Installing fonts..."
+configure_fonts
 
-# --- 8. Discord RPC ---
+# --- Discord RPC ---
 install_rpc() {
     if [ "$INSTALL_RPC" != "TRUE" ]; then return 0; fi
 
@@ -207,9 +194,10 @@ install_rpc() {
     fi
     rm -rf "$TEMP_DIR"
 }
-run_task "Discord RPC" "Installing Rich Presence..." install_rpc
+echo ">> Discord RPC: Installing Rich Presence..."
+install_rpc
 
-# --- 9. Game Installation ---
+# --- Game installation ---
 TARGET_OSU_EXE=$(find "$WINEPREFIX" -name "osu!.exe" 2>/dev/null | head -n 1)
 
 if [ -z "$TARGET_OSU_EXE" ]; then
@@ -233,10 +221,16 @@ if [ -z "$TARGET_OSU_EXE" ]; then
     exit 1
 fi
 
-# Clean up the downloaded installer
 rm -f "$WINEPREFIX/osu!install.exe"
 
-# --- 10. Create config and wrapper script ---
+# --- Icon ---
+if [ -n "${OSU_ICON:-}" ] && [ -f "$OSU_ICON" ]; then
+    ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+    mkdir -p "$ICON_DIR"
+    cp "$OSU_ICON" "$ICON_DIR/osu-stable.png"
+fi
+
+# --- Config + wrapper ---
 CONFIG_DIR="$HOME/.config/osu-importer"
 CONFIG_FILE="$CONFIG_DIR/config"
 WRAPPER="$CONFIG_DIR/osu_importer_wrapper.sh"
@@ -248,16 +242,20 @@ WINE_BIN="$WINE_FULL_PATH"
 GAME_EXE="$TARGET_OSU_EXE"
 EOF
 
-cat > "$WRAPPER" << 'WRAPPER_EOF'
-#!/usr/bin/env bash
-exec 2>>/tmp/osu.log
-set -x
+{
+    echo '#!/usr/bin/env bash'
+    echo 'exec 2>>/tmp/osu.log'
+    if [ -n "$NOTIFY_DIR" ]; then
+        printf 'export PATH="%s:$PATH"\n' "$NOTIFY_DIR"
+    fi
+    echo 'set -x'
+    cat << 'WRAPPER_EOF'
 
 CONFIG_FILE="$HOME/.config/osu-importer/config"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "ERROR: Config file not found at $CONFIG_FILE" >> /tmp/osu.log
-    notify-send "osu!stable error" "Configuration not found. Re-run the installer."
+    if command -v notify-send >/dev/null 2>&1; then notify-send "osu!stable error" "Configuration not found. Re-run the installer."; fi
     exit 1
 fi
 
@@ -265,7 +263,7 @@ source "$CONFIG_FILE"
 
 if [ -z "$PREFIX" ] || [ -z "$WINE_BIN" ] || [ -z "$GAME_EXE" ]; then
     echo "ERROR: Invalid config" >> /tmp/osu.log
-    notify-send "osu!stable error" "Corrupted configuration"
+    if command -v notify-send >/dev/null 2>&1; then notify-send "osu!stable error" "Corrupted configuration"; fi
     exit 1
 fi
 
@@ -274,7 +272,7 @@ export STAGING_AUDIO_DURATION=10000
 export PULSE_LATENCY_MSEC=60
 
 if [ ! -f "$GAME_EXE" ]; then
-    notify-send "osu!stable error" "osu!.exe not found at: $GAME_EXE"
+    if command -v notify-send >/dev/null 2>&1; then notify-send "osu!stable error" "osu!.exe not found at: $GAME_EXE"; fi
     exit 1
 fi
 
@@ -291,7 +289,39 @@ else
     $GM "$WINE_BIN" "$GAME_EXE"
 fi
 WRAPPER_EOF
+} > "$WRAPPER"
 chmod +x "$WRAPPER"
+
+# --- User desktop entry + mime ---
+DESKTOP_DIR="$HOME/.local/share/applications"
+MIME_DIR="$HOME/.local/share/mime/packages"
+mkdir -p "$DESKTOP_DIR" "$MIME_DIR"
+
+cat > "$DESKTOP_DIR/osu-stable.desktop" << EOF
+[Desktop Entry]
+Name=osu!stable
+Comment=Rhythm is just a click away
+Exec=osu %f
+Icon=osu-stable
+Terminal=false
+Type=Application
+Categories=Game;
+StartupWMClass=osu!.exe
+MimeType=application/x-osu-beatmap-archive;
+EOF
+
+cat > "$MIME_DIR/osu-stable.xml" << 'MIME_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-osu-beatmap-archive">
+    <comment>osu! Beatmap Archive</comment>
+    <glob pattern="*.osz"/>
+  </mime-type>
+</mime-info>
+MIME_EOF
+
+command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$HOME/.local/share/mime" 2>/dev/null || true
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
 echo ""
 echo "====================================="

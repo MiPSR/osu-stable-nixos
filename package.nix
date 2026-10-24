@@ -8,10 +8,10 @@ let
     curl
     unzip
     libnotify
+    desktop-file-utils
+    shared-mime-info
   ];
 
-  # Official osu! "full colour cookie" logo, fetched at build time from the
-  # brand identity guidelines (see README). Not committed to the repo.
   osuIcon = pkgs.fetchurl {
     url = "https://osu.ppy.sh/wiki/images/Brand_identity_guidelines/img/usage-full-colour.png";
     sha256 = "facc5f53b038c4c15a8958a2d55bbef937235a96207f47eeaa8d44d993a74b7c";
@@ -35,13 +35,14 @@ pkgs.stdenv.mkDerivation {
     cp ${osuIcon} $out/share/icons/hicolor/256x256/apps/osu-stable.png
     cp ${osuIcon} $out/share/pixmaps/osu-stable.png
 
-    cp install-nix.sh $out/bin/osu-install
-    chmod +x $out/bin/osu-install
+    cp install-nix.sh $out/bin/osu-stable-install
+    chmod +x $out/bin/osu-stable-install
 
-    wrapProgram $out/bin/osu-install \
+    wrapProgram $out/bin/osu-stable-install \
       --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps} \
       --set STAGING_AUDIO_DURATION 10000 \
-      --set PULSE_LATENCY_MSEC 60
+      --set PULSE_LATENCY_MSEC 60 \
+      --set OSU_ICON ${osuIcon}
 
     cat > $out/bin/osu <<'EOF'
 #!/bin/sh
@@ -49,14 +50,17 @@ WRAPPER="$HOME/.config/osu-importer/osu_importer_wrapper.sh"
 CONFIG="$HOME/.config/osu-importer/config"
 
 if [ -x "$WRAPPER" ] && [ -f "$CONFIG" ]; then
-  exec "$WRAPPER" "$@"
-else
-  echo "osu!stable is not installed or not configured."
-  echo "Launching setup wizard..."
-  exec osu-install
+  . "$CONFIG"
+  if [ -n "''${GAME_EXE:-}" ] && [ -f "$GAME_EXE" ]; then
+    exec "$WRAPPER" "$@"
+  fi
 fi
+echo "osu!stable is not installed or not configured."
+echo "Launching setup wizard..."
+exec @OSU_INSTALL@
 EOF
     chmod +x $out/bin/osu
+    sed -i "s#@OSU_INSTALL@#$out/bin/osu-stable-install#" $out/bin/osu
 
     cat > $out/share/applications/osu-stable.desktop <<'EOF'
 [Desktop Entry]

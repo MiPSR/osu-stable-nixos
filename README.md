@@ -52,21 +52,34 @@ sudo nixos-rebuild switch --flake .#my-machine
 
 Double-click any `.osz` or `.osk` file in your file manager; the wrapper passes it to the game.
 
-## Installer CLI flags
+## Installer
+
+The installer is invoked automatically by `osu` on first run. You can also run it directly:
 
 ```bash
-osu-install [options]
+osu-stable-install
 ```
 
 | Flag | Argument | Description |
 | --- | --- | --- |
-| `-s`, `--silent` | — | Accepted for compatibility (installer is CLI-only) |
-| `-d`, `--dir` | `<path>` | Custom install directory for osu! |
-| `--renderer` | `<name>` | Force renderer (`DXVK` or `OpenGL`) |
-| `--driver` | `<name>` | Force window driver (`X11` or `Wayland`) |
-| `--font` | `<name>` | Font to install (`WenQuanYi`, `Noto Sans`, `Koruri`, `Skip`) |
-| `--no-rpc` | — | Disable Discord Rich Presence installation |
-| `-h`, `--help` | — | Show help |
+To uninstall (removes `~/osu-stable` and the desktop entry only):
+
+```bash
+osu-stable-install --uninstall
+```
+
+### Changing settings
+
+Settings are stored in `~/.config/osu-stable.conf`:
+
+```bash
+RENDERER="DXVK"        # DXVK or OpenGL
+DRIVER="X11"           # X11 or Wayland
+FONTS="WenQuanYi (Micro Hei)"   # WenQuanYi, Noto Sans, Koruri, Skip
+INSTALL_RPC="TRUE"     # TRUE or FALSE
+```
+
+Edit that file, then re-run `osu-stable-install` to apply the changes.
 
 ## Troubleshooting
 
