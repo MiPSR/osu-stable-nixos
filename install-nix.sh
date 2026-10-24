@@ -8,9 +8,9 @@ set -e
 # --- Settings file (single file, no folder) ---
 SETTINGS_FILE="$HOME/.config/osu-stable.conf"
 
-# Defaults
-RENDERER="DXVK"
-DRIVER="X11"
+# Defaults (resolved below if unset)
+RENDERER=""
+DRIVER=""
 FONTS="WenQuanYi (Micro Hei)"
 INSTALL_RPC="TRUE"
 
@@ -18,6 +18,23 @@ INSTALL_RPC="TRUE"
 if [ -f "$SETTINGS_FILE" ]; then
     # shellcheck source=/dev/null
     source "$SETTINGS_FILE"
+fi
+
+# Resolve defaults when not set by settings
+if [ -z "${RENDERER:-}" ]; then
+    if command -v vulkaninfo >/dev/null 2>&1 || [ -e /run/opengl-driver/lib/libvulkan.so.1 ] || [ -e /usr/lib/libvulkan.so.1 ]; then
+        RENDERER="DXVK"
+    else
+        RENDERER="OpenGL"
+    fi
+fi
+
+if [ -z "${DRIVER:-}" ]; then
+    if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+        DRIVER="Wayland"
+    else
+        DRIVER="X11"
+    fi
 fi
 
 # --- Fixed install location ---
