@@ -68,6 +68,14 @@ To uninstall (removes `~/osu-stable` and the desktop entry only):
 osu-stable-install --uninstall
 ```
 
+To force a full reinstall (removes `~/osu-stable` then installs fresh):
+
+```bash
+osu-stable-install --reinstall
+```
+
+Re-running `osu-stable-install` when osu! is already installed does not re-download the game; it prints "osu! already present, updating settings instead..." and re-applies the current settings from `~/.config/osu-stable.conf`.
+
 ### Changing settings
 
 Settings are stored in `~/.config/osu-stable.conf`:

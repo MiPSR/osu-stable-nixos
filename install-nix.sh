@@ -37,8 +37,20 @@ if [ -z "${DRIVER:-}" ]; then
     fi
 fi
 
+# --- Driver auto-correction for stale settings ---
+if [ "$DRIVER" = "X11" ] && { [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; }; then
+    DRIVER="Wayland"
+fi
+
 # --- Fixed install location ---
 INSTALL_DIR="$HOME/osu-stable"
+
+# --- Reinstall ---
+if [ "${1:-}" = "--reinstall" ]; then
+    echo "Reinstalling osu!stable..."
+    rm -rf "$INSTALL_DIR"
+    rm -f "$HOME/.local/share/applications/osu-stable.desktop"
+fi
 
 # --- Uninstall ---
 if [ "${1:-}" = "--uninstall" ]; then
@@ -47,6 +59,23 @@ if [ "${1:-}" = "--uninstall" ]; then
     rm -f "$HOME/.local/share/applications/osu-stable.desktop"
     echo "Done."
     exit 0
+fi
+
+# --- Migrate old prefixes if target missing ---
+if [ ! -d "$INSTALL_DIR" ]; then
+    OLD_PREFIX=""
+    if [ -f "$HOME/.config/osu-importer/config" ]; then
+        OLD_PREFIX=$(grep '^PREFIX=' "$HOME/.config/osu-importer/config" | head -n1 | cut -d= -f2- | tr -d '"')
+    fi
+    if [ -z "$OLD_PREFIX" ] || [ ! -d "$OLD_PREFIX" ]; then
+        if [ -d "$HOME/.wine-osu" ]; then
+            OLD_PREFIX="$HOME/.wine-osu"
+        fi
+    fi
+    if [ -n "$OLD_PREFIX" ] && [ -d "$OLD_PREFIX" ] && [ "$OLD_PREFIX" != "$INSTALL_DIR" ]; then
+        echo "Migrating existing install from $OLD_PREFIX to $INSTALL_DIR ..."
+        mv "$OLD_PREFIX" "$INSTALL_DIR"
+    fi
 fi
 
 # --- Dependency check ---
@@ -216,6 +245,10 @@ install_rpc
 
 # --- Game installation ---
 TARGET_OSU_EXE=$(find "$WINEPREFIX" -name "osu!.exe" 2>/dev/null | head -n 1)
+
+if [ -n "$TARGET_OSU_EXE" ]; then
+    echo "osu! already present, updating settings instead..."
+fi
 
 if [ -z "$TARGET_OSU_EXE" ]; then
     echo "Downloading osu! installer..."
