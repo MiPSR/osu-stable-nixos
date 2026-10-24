@@ -76,6 +76,12 @@ If the game doesn't start, check the wrapper log:
 cat /tmp/osu.log
 ```
 
+## Notes
+
+* The app appears as **osu!stable**.
+* Icon is the official full-colour cookie from the [osu! brand identity guidelines](https://osu.ppy.sh/wiki/en/Brand_identity_guidelines), fetched at build time.
+* MIME type is registered, but your existing default handler for `.osz` is not overridden.
+
 ## License
 
 This project is released into the public domain (Unlicense). See [LICENSE](LICENSE).

@@ -5,9 +5,10 @@
 # NixOS port inspired by: afanetd / GalaxyVinci05 forks
 #
 # Modified for: NixOS Environment
-#  - No GUI (CLI only); still creates .desktop shortcuts and mime entries
+#  - No GUI (CLI only)
 #  - Dependencies provided by Nix (no apt/pacman logic)
 #  - CLI arguments supported (--silent, --dir, ...)
+#  - Desktop entry / icon / MIME type are provided by the Nix package
 # ==============================================================================
 
 set -e
@@ -27,7 +28,7 @@ show_help() {
     echo "  --renderer TYPE     OpenGL or DXVK (Default: DXVK)"
     echo "  --driver TYPE       X11 or Wayland (Default: X11)"
     echo "  --font NAME         Select font (WenQuanYi, Noto Sans, Koruri, Skip)"
-    echo "  --no-rpc            Skip Discord RPC installation"
+    echo "  --no-rpc            Skip Discord Rich Presence installation"
     echo "  -h, --help          Show this help"
     exit 0
 }
@@ -232,7 +233,10 @@ if [ -z "$TARGET_OSU_EXE" ]; then
     exit 1
 fi
 
-# --- 10. Create config, wrapper script ---
+# Clean up the downloaded installer
+rm -f "$WINEPREFIX/osu!install.exe"
+
+# --- 10. Create config and wrapper script ---
 CONFIG_DIR="$HOME/.config/osu-importer"
 CONFIG_FILE="$CONFIG_DIR/config"
 WRAPPER="$CONFIG_DIR/osu_importer_wrapper.sh"
@@ -253,7 +257,7 @@ CONFIG_FILE="$HOME/.config/osu-importer/config"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "ERROR: Config file not found at $CONFIG_FILE" >> /tmp/osu.log
-    notify-send "osu! error" "Configuration not found. Re-run the installer."
+    notify-send "osu!stable error" "Configuration not found. Re-run the installer."
     exit 1
 fi
 
@@ -261,7 +265,7 @@ source "$CONFIG_FILE"
 
 if [ -z "$PREFIX" ] || [ -z "$WINE_BIN" ] || [ -z "$GAME_EXE" ]; then
     echo "ERROR: Invalid config" >> /tmp/osu.log
-    notify-send "osu! error" "Corrupted configuration"
+    notify-send "osu!stable error" "Corrupted configuration"
     exit 1
 fi
 
@@ -270,7 +274,7 @@ export STAGING_AUDIO_DURATION=10000
 export PULSE_LATENCY_MSEC=60
 
 if [ ! -f "$GAME_EXE" ]; then
-    notify-send "osu! error" "osu!.exe not found at: $GAME_EXE"
+    notify-send "osu!stable error" "osu!.exe not found at: $GAME_EXE"
     exit 1
 fi
 
@@ -289,81 +293,14 @@ fi
 WRAPPER_EOF
 chmod +x "$WRAPPER"
 
-# --- 11. Icon extraction and .desktop files ---
-ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
-DESKTOP_DIR="$HOME/.local/share/applications"
-mkdir -p "$ICON_DIR" "$DESKTOP_DIR"
-
-echo "Extracting icon from osu!.exe..."
-if command -v wrestool &> /dev/null && command -v icotool &> /dev/null; then
-    TEMP_ICO="/tmp/osu-icon.ico"
-    wrestool -x -t 14 "$TARGET_OSU_EXE" > "$TEMP_ICO" 2>/dev/null || true
-
-    if [ -f "$TEMP_ICO" ] && [ -s "$TEMP_ICO" ]; then
-        icotool -x -o "$ICON_DIR" "$TEMP_ICO" 2>/dev/null || true
-        EXTRACTED_ICON=$(find "$ICON_DIR" -name "*256x256*.png" -o -name "*icon_*" | head -n 1)
-        if [ -n "$EXTRACTED_ICON" ]; then
-            mv "$EXTRACTED_ICON" "$ICON_DIR/osu.png"
-        fi
-        rm -f "$TEMP_ICO"
-    fi
-fi
-
-ICON_PATH="$ICON_DIR/osu.png"
-if [ ! -f "$ICON_PATH" ]; then
-    ICON_PATH="applications-games"
-fi
-
-cat > "$DESKTOP_DIR/osu.desktop" << EOF
-[Desktop Entry]
-Name=osu!
-Comment=Rhythm is just a click away
-Exec=$WRAPPER
-Icon=$ICON_PATH
-Terminal=false
-Type=Application
-Categories=Game;
-StartupWMClass=osu!.exe
-EOF
-
-cat > "$DESKTOP_DIR/osu-importer.desktop" << EOF
-[Desktop Entry]
-Name=osu! Importer
-Comment=Import osu! beatmaps
-Exec=$WRAPPER %f
-Icon=$ICON_PATH
-Terminal=false
-Type=Application
-NoDisplay=true
-MimeType=application/x-osu-beatmap-archive;
-EOF
-
-# --- 12. MIME type registration ---
-MIME_DIR="$HOME/.local/share/mime/packages"
-mkdir -p "$MIME_DIR"
-
-cat > "$MIME_DIR/osu-beatmap.xml" << 'MIME_EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
-  <mime-type type="application/x-osu-beatmap-archive">
-    <comment>osu! Beatmap Archive</comment>
-    <glob pattern="*.osz"/>
-  </mime-type>
-</mime-info>
-MIME_EOF
-
-update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
-update-mime-database "$HOME/.local/share/mime" 2>/dev/null || true
-
 echo ""
 echo "====================================="
 echo "Installation Complete!"
 echo "====================================="
 echo "Wrapper: $WRAPPER"
-echo "Desktop entries: $DESKTOP_DIR"
 echo ""
 echo "You can now:"
-echo "  - Launch osu! from your application menu"
+echo "  - Launch osu!stable from your application menu"
 echo "  - Run 'osu' command in terminal"
 echo "  - Double-click .osz files to import beatmaps"
 echo "====================================="
