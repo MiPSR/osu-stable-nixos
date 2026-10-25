@@ -30,33 +30,37 @@ if [ -z "${RENDERER:-}" ]; then
 fi
 
 if [ -z "${DRIVER:-}" ]; then
-    if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+    if [ -S "/run/user/$(id -u)/wayland-0" ]; then
         DRIVER="Wayland"
     else
         DRIVER="X11"
     fi
 fi
 
-# --- Driver auto-correction for stale settings ---
-if [ "$DRIVER" = "X11" ] && { [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; }; then
-    DRIVER="Wayland"
-fi
-
 # --- Fixed install location ---
 INSTALL_DIR="$HOME/osu-stable"
+
+cleanup_all() {
+    rm -rf "$INSTALL_DIR"
+    rm -rf "$HOME/.config/osu-importer"
+    rm -f "$HOME/.config/osu-stable.conf"
+    rm -f "$HOME/.local/share/applications/osu-stable.desktop"
+    rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/osu-stable.png"
+    rm -f "$HOME/.local/share/mime/packages/osu-stable.xml"
+    command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$HOME/.local/share/mime" 2>/dev/null || true
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+}
 
 # --- Reinstall ---
 if [ "${1:-}" = "--reinstall" ]; then
     echo "Reinstalling osu!stable..."
-    rm -rf "$INSTALL_DIR"
-    rm -f "$HOME/.local/share/applications/osu-stable.desktop"
+    cleanup_all
 fi
 
 # --- Uninstall ---
 if [ "${1:-}" = "--uninstall" ]; then
     echo "Uninstalling osu!stable..."
-    rm -rf "$INSTALL_DIR"
-    rm -f "$HOME/.local/share/applications/osu-stable.desktop"
+    cleanup_all
     echo "Done."
     exit 0
 fi
@@ -178,12 +182,12 @@ configure_fonts() {
     echo "Installing fonts: $FONTS"
     case "$FONTS" in
       "WenQuanYi"*)
-        curl -L -o "$FONT_DIR/wqy-microhei.ttc" "https://github.com/anthonyfok/fonts-wqy-microhei/raw/master/wqy-microhei.ttc"
+        [ -f "$FONT_DIR/wqy-microhei.ttc" ] || curl -L -o "$FONT_DIR/wqy-microhei.ttc" "https://github.com/anthonyfok/fonts-wqy-microhei/raw/master/wqy-microhei.ttc"
         REG_NAME="WenQuanYi Micro Hei"
         REG_FILE="wqy-microhei.ttc"
         ;;
       "Noto Sans"*)
-        curl -L -o "$FONT_DIR/osu-font.otf" "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf"
+        [ -f "$FONT_DIR/osu-font.otf" ] || curl -L -o "$FONT_DIR/osu-font.otf" "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf"
         REG_NAME="Noto Sans CJK JP Regular"
         REG_FILE="osu-font.otf"
         ;;
@@ -222,6 +226,11 @@ configure_fonts
 # --- Discord RPC ---
 install_rpc() {
     if [ "$INSTALL_RPC" != "TRUE" ]; then return 0; fi
+
+    if [ -f "$WINEPREFIX/drive_c/windows/bridge.exe" ]; then
+        echo "RPC bridge already installed, skipping."
+        return 0
+    fi
 
     echo "Cleaning old bridge..."
     WAYLAND_DISPLAY="" "$WINE_BIN" net stop rpc-bridge 2>/dev/null || true
